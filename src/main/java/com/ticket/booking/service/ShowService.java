@@ -2,6 +2,7 @@ package com.ticket.booking.service;
 
 import com.ticket.booking.dto.CreateShowRequest;
 import com.ticket.booking.dto.ShowResponse;
+import com.ticket.booking.metrics.MetricsService;
 import com.ticket.booking.repository.ShowRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -17,11 +18,13 @@ import java.util.UUID;
 public class ShowService {
     private final ShowRepository showRepository;
     private final int defaultPerUserLimit;
+    private final MetricsService metricsService;
 
     public ShowService(ShowRepository showRepository,
-                       @Value("${app.reservation.default-per-user-limit}") int defaultPerUserLimit) {
+                       @Value("${app.reservation.default-per-user-limit}") int defaultPerUserLimit, MetricsService metricsService) {
         this.showRepository = showRepository;
         this.defaultPerUserLimit = defaultPerUserLimit;
+        this.metricsService = metricsService;
     }
 
     @Transactional
@@ -41,7 +44,16 @@ public class ShowService {
         if (limit < 1) throw new ReservationService.ValidationException("per_user_limit must be >= 1");
         UUID id = UUID.randomUUID();
         ShowResponse response = showRepository.create(id, request.name().trim(), seats, request.price_paise(), limit);
-
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    metricsService.registerShowGauge(id);
+                }
+            });
+        } else {
+            metricsService.registerShowGauge(id);
+        }
         return response;
     }
 
@@ -51,6 +63,7 @@ public class ShowService {
         if (response.available_seats() + response.held_seats() + response.confirmed_seats() != response.total_seats()) {
             throw new IllegalStateException("show reconciliation invariant violated");
         }
+        metricsService.registerShowGauge(id);
         return response;
     }
 }

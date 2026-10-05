@@ -1,5 +1,6 @@
 package com.ticket.booking.service;
 
+import com.ticket.booking.metrics.MetricsService;
 import tools.jackson.databind.ObjectMapper;
 import com.ticket.booking.dto.ReservationResponse;
 import com.ticket.booking.repository.IdempotencyRepository;
@@ -28,19 +29,21 @@ public class ReservationService {
     private final IdempotencyRepository idempotencyRepository;
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final MetricsService metricsService;
 
     public ReservationService(ShowRepository showRepository,
                               SeatRepository seatRepository,
                               ReservationRepository reservationRepository,
                               IdempotencyRepository idempotencyRepository,
                               JdbcTemplate jdbc,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper, MetricsService metricsService) {
         this.showRepository = showRepository;
         this.seatRepository = seatRepository;
         this.reservationRepository = reservationRepository;
         this.idempotencyRepository = idempotencyRepository;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.metricsService = metricsService;
     }
 
     @Transactional
@@ -71,6 +74,7 @@ public class ReservationService {
         }
         if (key.responseStatus() != null) {
             Object replay = readStoredResponse(key.responseBody());
+            afterCommit(metricsService::incrementIdempotentReplay);
             return new ReservationResult(key.responseStatus(), replay, true, "idempotent-replay");
         }
 
@@ -114,6 +118,7 @@ public class ReservationService {
                 reservationId.toString(), showId.toString(), userId, seats, amountPaise, "confirmed");
         ReservationResult result = new ReservationResult(201, response, false, null);
         completeIdempotency(key.id(), result);
+        afterCommit(() -> metricsService.incrementConfirmed());
         return result;
     }
 
@@ -137,6 +142,7 @@ public class ReservationService {
                 .toList();
         reservationRepository.releaseSeats(reservationId);
         reservationRepository.cancel(reservationId);
+        afterCommit(() -> metricsService.refreshShowGauge(reservation.showId()));
 
         return new ReservationResponse(
                 reservation.id().toString(),
@@ -148,6 +154,7 @@ public class ReservationService {
     }
 
     private ReservationResult decline(int httpStatus, String reason) {
+        afterCommit(() -> metricsService.incrementDeclined(reason));
         DeclineBody body = new DeclineBody("RESERVATION_DECLINED", reason, humanReason(reason));
         return new ReservationResult(httpStatus, body, false, reason);
     }
@@ -174,7 +181,7 @@ public class ReservationService {
 
     private Object readStoredResponse(String json) {
         try {
-            return objectMapper.readValue(json, com.fasterxml.jackson.databind.JsonNode.class);
+            return objectMapper.readTree(json);
         } catch (Exception e) {
             throw new IllegalStateException("corrupt idempotency response", e);
         }
@@ -182,7 +189,12 @@ public class ReservationService {
 
     private void lockUserAndShow(UUID showId, String userId) {
         String lockKey = showId + ":" + userId;
-        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", Long.class, lockKey);
+
+        jdbc.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                rs -> null,
+                lockKey
+        );
     }
 
     private static List<String> canonicalSeats(List<String> seats) {
