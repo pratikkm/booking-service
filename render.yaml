@@ -10,7 +10,7 @@ services:
       - key: SPRING_DATASOURCE_URL
         fromDatabase:
           name: ticketing-db
-          property:
+          property: connectionString
       - key: SPRING_DATASOURCE_USERNAME
         fromDatabase:
           name: ticketing-db
