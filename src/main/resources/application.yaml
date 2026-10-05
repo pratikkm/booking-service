@@ -2,9 +2,9 @@ spring:
   application:
     name: booking-service
   datasource:
-    url: jdbc:postgresql://postgres:5432/ticketing
-    username: postgres
-    password: postgres
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/ticketing}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:40}
       minimum-idle: ${DB_MIN_IDLE:5}
