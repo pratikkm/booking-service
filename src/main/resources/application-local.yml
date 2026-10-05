@@ -1,0 +1,4 @@
+# Optional developer overrides. This file is not active unless --spring.profiles.active=local is used.
+logging:
+  level:
+    com.ticket.booking: DEBUG
