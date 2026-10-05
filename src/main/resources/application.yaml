@@ -2,7 +2,7 @@ spring:
   application:
     name: booking-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/ticketing
+    url: jdbc:postgresql://postgres:5432/ticketing
     username: postgres
     password: postgres
     hikari:
