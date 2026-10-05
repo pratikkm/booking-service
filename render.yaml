@@ -29,5 +29,5 @@ services:
 databases:
   - name: ticketing-db
     databaseName: ticketing
-    user: postgres
+    user: ticketing
     plan: free
